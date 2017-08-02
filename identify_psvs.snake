@@ -1,0 +1,127 @@
+import os
+
+SNAKEMAKE_DIR = os.path.dirname(workflow.snakefile)
+
+shell.executable("/bin/bash")
+
+configfile: "config.yaml"
+
+shell.prefix("source %s/env.cfg; set -eo pipefail; " % SNAKEMAKE_DIR)
+
+haplotypes = {"ds": [], "sample": [], "rep": []}
+for ds in config["dataset"]:
+    sns = []
+    with open(config[ds]["name_mapping"], "r") as names:
+        for line in names:
+            new, old = line.rstrip().split()
+            for rep in range(config[ds]["haplotypes_per_indiv"]):
+                haplotypes["ds"].append(ds)
+                haplotypes["sample"].append(new)
+                haplotypes["rep"].append(rep)
+
+
+if not os.path.exists("log"):
+    os.makedirs("log")
+
+def freebayes_input(wc):
+    return {k: v for k, v in config[wc.ds].items() if k in []}
+
+localrules: all
+
+#rule all:
+#    input: expand("vcf/{ds}.psv.vcf", ds=config["dataset"]),
+#           expand("vcf/{ds}.filt.vcf.gz", ds=config["dataset"])
+
+rule plot_tree:
+    input: "tree/RAxML_bestTree.test"
+    output: "tree/RAxML_bestTree.test.pdf"
+    params: root=config["root"], sge_opts="-l h_rt=1:0:0"
+    shell:
+        "Rscript plot_tree.R {input} {output} {params.root}"
+
+rule raxml_tree:
+    input: "aligned/combined.aligned.fasta"
+    output: "tree/RAxML_bestTree.test"
+    params: sge_opts="-l mfree=4G -pe serial 8"
+    shell:
+        "raxmlHPC-PTHREADS -T 8 -x 42 -p 9000 -f a -m GTRGAMMA -# 1000 -s {input} -n test"
+
+rule mafft_align:
+    input: "haplotypes/combined.fasta"
+    output: "aligned/combined.aligned.fasta"
+    params: sge_opts="-l mfree=4G -l h_rt=1:0:0 -pe serial 8"
+    shell:
+        "mafft --thread 8 --auto {input} > {output}"
+
+rule combine_haplotypes:
+    input: expand("haplotypes/{ds}.{sample}.{rep}.fasta", zip, ds=haplotypes["ds"], sample=haplotypes["sample"], rep=haplotypes["rep"])
+    output: "haplotypes/combined.fasta"
+    params: sge_opts="-l h_rt=1:0:0"
+    shell:
+        "cat {input} > {output}"
+
+rule sample_haplotype:
+    input: vcf="vcf/{ds}.filt.vcf.gz", fasta=lambda wc: config[wc.ds]["reference"], fixed="vcf/{ds}.psv.vcf.gz"
+    output: "haplotypes/{ds}.{sample}.{rep}.fasta"
+    params: sge_opts="-l h_rt=1:0:0", region=lambda wc: config[wc.ds]["region"]
+    shell:
+        "python sample_haplotype.py {input.vcf} {wildcards.sample} {input.fasta} {output} --fixed_variants {input.fixed} {params.region}"
+
+rule tabix_vcfs:
+    input: variants="vcf/{ds}.filt.vcf", psv="vcf/{ds}.psv.vcf"
+    output: var_v="vcf/{ds}.filt.vcf.gz", var_i="vcf/{ds}.filt.vcf.gz.tbi", psv_v="vcf/{ds}.psv.vcf.gz", psv_i="vcf/{ds}.psv.vcf.gz.tbi"
+    params: sge_opts="-l mfree=1G -l h_rt=1:0:0"
+    shell:
+        """bgzip -c {input.variants} > {output.var_v}
+        tabix {output.var_v}
+        bgzip -c {input.psv} > {output.psv_v}
+        tabix {output.psv_v}"""
+
+rule get_psvs:
+    input: "vcf/{ds}.filt.vcf"
+    output: "vcf/{ds}.psv.vcf"
+    params: sge_opts="-l mfree=1G -l h_rt=1:0:0"
+    shell:
+        "python get_psvs.py {input} {output}"
+
+rule filter_calls:
+    input: "vcf/{ds}.fixed_name.vcf"
+    output: "vcf/{ds}.filt.vcf"
+    params: sge_opts="-l h_rt=1:0:0", qual=20
+    shell:
+        """vcffilter -f "QUAL > {params.qual}" {input} > {output}"""
+
+rule fix_vcf:
+    input: "vcf/{ds}.vcf"
+    output: "vcf/{ds}.fixed_name.vcf"
+    params: sge_opts="-l h_rt=1:0:0", prepend_chr=config["add_chr_prefix"]
+    run:
+        replace = {}
+        if "name_mapping" in config[wildcards.ds]:
+            with open(config[wildcards.ds]["name_mapping"], "r") as names:
+                for line in names:
+                    new, old = line.rstrip().split()
+                    replace[old] = new
+        with open(input[0], "r") as vcf, open(output[0], "w") as outvcf:
+            for line in vcf:
+                if line.startswith("##"):
+                    outline = line
+                elif line.startswith("#CHROM"):
+                    cols = line.rstrip().split()
+                    for i, col in enumerate(cols):
+                        if i > 8 and col in replace:
+                           cols[i] = replace[col]
+                    outline = "\t".join(cols) + "\n"
+                elif not line.startswith("chr") and params.prepend_chr:
+                    outline = "chr" + line
+                else:
+                    outline = line
+                print(outline, file=outvcf, end="")
+
+rule run_freebayes:
+    input: unpack(lambda wc: {k: v for k, v in config[wc.ds].items() if k in ["freebayes", "bamlist", "ploidy", "populations", "reference"]})
+    output: "vcf/{ds}.vcf"
+    params: region=lambda wc: config[wc.ds]["region"], custom=lambda wc: config[wc.ds].get("custom", ""), sge_opts="-l mfree=8G -l h_rt=1:0:0", freebayes=config["freebayes"]
+    shell:
+        """{params.freebayes} -L {input.bamlist} -A {input.ploidy} -r {params.region} --populations {input.populations} -0 -iXu \
+        -f {input.reference} {params.custom} > {output}"""
