@@ -44,6 +44,7 @@ if __name__ == "__main__":
     parser.add_argument("outfasta")
     parser.add_argument("region", help="Region chr:start-end")
     parser.add_argument("--fixed_variants", help="Table of CHROM, POS, REF, and ALT for variants to force the ALT allele")
+    parser.add_argument("--output_name", default=None, help="Name of record in output fasta")
 
     args = parser.parse_args()
 
@@ -61,5 +62,9 @@ if __name__ == "__main__":
     for variant in vcf_reader.fetch(*region):
         allele = get_allele_seq(variant, args.indiv, fixed)
         sequence = update_seq(sequence, variant.pos, variant.ref, allele, region)
-    seq_record = SeqRecord(Seq(sequence), id=args.indiv, description="")
+    if args.output_name is not None:
+        indiv = args.output_name
+    else:
+        indiv = args.indiv
+    seq_record = SeqRecord(Seq(sequence), id=indiv, description="")
     SeqIO.write([seq_record], args.outfasta, "fasta")

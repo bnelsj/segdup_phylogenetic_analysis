@@ -42,9 +42,11 @@ rule plot_tree:
 rule raxml_tree:
     input: "aligned/combined.aligned.fasta"
     output: "tree/RAxML_bestTree.test"
-    params: sge_opts="-l mfree=4G -pe serial 8"
+    params: sge_opts="-l h_rt=1:0:0 -l mfree=4G -pe serial 8", input=os.path.abspath("aligned/combined.aligned.fasta")
     shell:
-        "raxmlHPC-PTHREADS -T 8 -x 42 -p 9000 -f a -m GTRGAMMA -# 1000 -s {input} -n test"
+        """pushd tree
+        raxmlHPC-PTHREADS -T 8 -x 42 -p 9000 -f a -m GTRGAMMA -# 1000 -s {params.input} -n test
+        popd"""
 
 rule mafft_align:
     input: "haplotypes/combined.fasta"
@@ -54,18 +56,19 @@ rule mafft_align:
         "mafft --thread 8 --auto {input} > {output}"
 
 rule combine_haplotypes:
-    input: expand("haplotypes/{ds}.{sample}.{rep}.fasta", zip, ds=haplotypes["ds"], sample=haplotypes["sample"], rep=haplotypes["rep"])
+    input: expand("haplotypes/{ds}.{sample}.{rep}.fasta", zip, ds=haplotypes["ds"], sample=haplotypes["sample"], rep=haplotypes["rep"]),
+           config["additional_haplotypes"]
     output: "haplotypes/combined.fasta"
     params: sge_opts="-l h_rt=1:0:0"
     shell:
         "cat {input} > {output}"
 
 rule sample_haplotype:
-    input: vcf="vcf/{ds}.filt.vcf.gz", fasta=lambda wc: config[wc.ds]["reference"], fixed="vcf/{ds}.psv.vcf.gz"
+    input: vcf="vcf/{ds}.filt.vcf.gz", fasta=lambda wc: config["vcf_reference"], fixed="vcf/{ds}.psv.vcf.gz"
     output: "haplotypes/{ds}.{sample}.{rep}.fasta"
-    params: sge_opts="-l h_rt=1:0:0", region=lambda wc: config[wc.ds]["region"]
+    params: sge_opts="-l h_rt=1:0:0", region=config["vcf_region"], name="{sample}.{rep}"
     shell:
-        "python sample_haplotype.py {input.vcf} {wildcards.sample} {input.fasta} {output} --fixed_variants {input.fixed} {params.region}"
+        "python sample_haplotype.py {input.vcf} {wildcards.sample} {input.fasta} {output} {params.region} --fixed_variants {input.fixed} --output_name {params.name}"
 
 rule tabix_vcfs:
     input: variants="vcf/{ds}.filt.vcf", psv="vcf/{ds}.psv.vcf"

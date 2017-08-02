@@ -3,9 +3,11 @@
 dataset: [cambodians, papuans, denisova]
 freebayes: /net/eichler/vol7/home/psudmant/local_modules_sw/freebayes/0.9.14/Linux/RHEL6/x86_64/freebayes/bin/freebayes
 
-additional_haplotypes: haplotypes/hg19.ref.fasta, haplotypes/ponAbe2.ref.fasta
+additional_haplotypes: [reference_haplotypes/hg19.ref.fasta, reference_haplotypes/ponAbe2.ref.fasta]
 root: ponAbe2.ref
 add_chr_prefix: True # Add "chr" prefix to CHROM in freebayes vcf if missing
+vcf_reference: /net/eichler/vol2/eee_shared/assemblies/hg19/indexes/bwa_0.7.5a-r405/ucsc.hg19.fasta
+vcf_region: "chr16:22710040-22783557"
 
 denisova:
     reference: /net/eichler/vol2/eee_shared/assemblies/hg19/indexes/bwa_0.7.5a-r405/ucsc.hg19.fasta
