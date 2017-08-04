@@ -28,45 +28,62 @@ def freebayes_input(wc):
 
 localrules: all
 
-#rule all:
-#    input: expand("vcf/{ds}.psv.vcf", ds=config["dataset"]),
-#           expand("vcf/{ds}.filt.vcf.gz", ds=config["dataset"])
+rule combine_plots:
+    input: expand("tree/{rep}/RAxML_bestTree.test.pdf", rep=range(config["replicates"]))
+    output: "plots/combined.tree.pdf"
+    params: sge_opts="-l mfree=4G -l h_rt=1:0:0"
+    shell:
+        "gs -dBATCH -dNOPAUSE -q -sDEVICE=pdfwrite -sOutputFile={output} {input}"
 
 rule plot_tree:
-    input: "tree/RAxML_bestTree.test"
-    output: "tree/RAxML_bestTree.test.pdf"
+    input: "tree/{rep}/RAxML_bestTree.test"
+    output: "tree/{rep}/RAxML_bestTree.test.pdf"
     params: root=config["root"], sge_opts="-l h_rt=1:0:0"
     shell:
         "Rscript plot_tree.R {input} {output} {params.root}"
 
-rule raxml_tree:
-    input: "aligned/combined.aligned.fasta"
-    output: "tree/RAxML_bestTree.test"
-    params: sge_opts="-l h_rt=1:0:0 -l mfree=4G -pe serial 8", input=os.path.abspath("aligned/combined.aligned.fasta")
+rule plot_mrct:
+    input: "tree/mrct.tre"
+    output: "tree/mrct.pdf"
+    params: sge_opts="-l h_rt=1:0:0", root=config["root"]
     shell:
-        """pushd tree
+        "Rscript plot_tree.R {input} {output} {params.root}"
+
+rule majority_rule_consensus_tree:
+    input: expand("tree/{rep}/RAxML_bestTree.test", rep=range(config["replicates"]))
+    output: "tree/mrct.tre"
+    params: sge_opts="-l mfree=4G -l h_rt=1:0:0", root=config["root"]
+    shell:
+        "sumtrees.py -f 0.1 --root-target-at-outgroup {params.root} -o {output} {input}"
+
+rule raxml_tree:
+    input: "aligned/{rep}/combined.aligned.fasta"
+    output: "tree/{rep}/RAxML_bestTree.test"
+    params: sge_opts="-l h_rt=1:0:0 -l mfree=4G -pe serial 8", input=os.path.abspath("aligned/{rep}/combined.aligned.fasta")
+    shell:
+        """pushd tree/{wildcards.rep}
         raxmlHPC-PTHREADS -T 8 -x 42 -p 9000 -f a -m GTRGAMMA -# 1000 -s {params.input} -n test
         popd"""
 
 rule mafft_align:
-    input: "haplotypes/combined.fasta"
-    output: "aligned/combined.aligned.fasta"
+    input: "haplotypes/{rep}/combined.fasta"
+    output: "aligned/{rep}/combined.aligned.fasta"
     params: sge_opts="-l mfree=4G -l h_rt=1:0:0 -pe serial 8"
     shell:
         "mafft --thread 8 --auto {input} > {output}"
 
 rule combine_haplotypes:
-    input: expand("haplotypes/{ds}.{sample}.{rep}.fasta", zip, ds=haplotypes["ds"], sample=haplotypes["sample"], rep=haplotypes["rep"]),
+    input: expand("haplotypes/{{rep}}/{ds}.{sample}.{num}.fasta", zip, ds=haplotypes["ds"], sample=haplotypes["sample"], num=haplotypes["rep"]),
            config["additional_haplotypes"]
-    output: "haplotypes/combined.fasta"
+    output: "haplotypes/{rep}/combined.fasta"
     params: sge_opts="-l h_rt=1:0:0"
     shell:
         "cat {input} > {output}"
 
 rule sample_haplotype:
     input: vcf="vcf/{ds}.filt.vcf.gz", fasta=lambda wc: config["vcf_reference"], fixed="vcf/{ds}.psv.vcf.gz"
-    output: "haplotypes/{ds}.{sample}.{rep}.fasta"
-    params: sge_opts="-l h_rt=1:0:0", region=config["vcf_region"], name="{sample}.{rep}"
+    output: "haplotypes/{rep}/{ds}.{sample}.{num}.fasta"
+    params: sge_opts="-l h_rt=1:0:0", region=config["vcf_region"], name="{sample}.{num}"
     shell:
         "python sample_haplotype.py {input.vcf} {wildcards.sample} {input.fasta} {output} {params.region} --fixed_variants {input.fixed} --output_name {params.name}"
 
