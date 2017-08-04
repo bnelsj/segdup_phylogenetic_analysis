@@ -54,9 +54,12 @@ if __name__ == "__main__":
 
     fixed = pd.DataFrame(columns=["CHROM", "POS", "ALT"])
     if args.fixed_variants is not None:
-        fixed_vcf = pysam.VariantFile(args.fixed_variants)
-        for i, record in enumerate(fixed_vcf.fetch(*region)):
-            fixed.loc[i] = [record.chrom, record.pos, record.alts[0]]
+        try:
+            fixed_vcf = pysam.VariantFile(args.fixed_variants)
+            for i, record in enumerate(fixed_vcf.fetch(*region)):
+                fixed.loc[i] = [record.chrom, record.pos, record.alts[0]]
+        except ValueError as e:
+            print("No variants in fixed_variants file", args.fixed_variants, e, file=sys.stderr)
     sequence = pysam.FastaFile(args.reference_fasta).fetch(*region)
     vcf_reader = pysam.VariantFile(args.vcf)
     for variant in vcf_reader.fetch(*region):
