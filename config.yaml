@@ -1,13 +1,14 @@
 ---
 
-dataset: [cambodians, papuans, denisova]
-freebayes: /net/eichler/vol7/home/psudmant/local_modules_sw/freebayes/0.9.14/Linux/RHEL6/x86_64/freebayes/bin/freebayes
+dataset: [cambodians, papuans, denisova, others]
+freebayes: /net/eichler/vol2/eee_shared/modules/anaconda3/envs/py3.20161130/bin/freebayes
 
 additional_haplotypes: [reference_haplotypes/hg19.ref.fasta, reference_haplotypes/ponAbe2.ref.fasta]
 root: ponAbe2.ref
 add_chr_prefix: True # Add "chr" prefix to CHROM in freebayes vcf if missing
 vcf_reference: /net/eichler/vol2/eee_shared/assemblies/hg19/indexes/bwa_0.7.5a-r405/ucsc.hg19.fasta
 vcf_region: "chr16:22710040-22783557"
+replicates: 100
 
 denisova:
     reference: /net/eichler/vol2/eee_shared/assemblies/hg19/indexes/bwa_0.7.5a-r405/ucsc.hg19.fasta
@@ -35,4 +36,13 @@ papuans:
     populations: populations.combined.txt
     region: "16:22710040-22783557"
     name_mapping: dat/names.papuans.txt
+    haplotypes_per_indiv: 1
+
+others:
+    reference: /net/eichler/vol2/eee_shared/assemblies/human_1kg_v37/human_1kg_v37.fasta
+    bamlist: dat/bamlist.others.txt
+    ploidy: dat/ploidy.others.bed
+    populations: dat/populations.others.txt
+    region: "16:22710040-22783557"
+    name_mapping: dat/names.others.txt
     haplotypes_per_indiv: 1
